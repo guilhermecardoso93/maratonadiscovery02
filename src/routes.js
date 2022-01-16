@@ -3,76 +3,129 @@ const routes = express.Router()
 
 const views = __dirname + '/views/'
 
-const profile = {
-  name: 'Guilherme',
-  avatar: '//avatars.githubusercontent.com/u/79944203?v=4',
-  'monthly-budget': 3000,
-  'hours-per-day': 8,
-  'days-per-week': 5,
-  'vacation-per-year': 20
-}
-const jobs = [
-  {
-    name: 'Pizzaria Guloso',
-    'daily-hours': 2,
-    'total-hours': 40,
-    created_at: Date.now()
+const Profile = {
+  data: {
+    name: 'Guilherme',
+    avatar: '//avatars.githubusercontent.com/u/79944203?v=4',
+    'monthly-budget': 3000,
+    'hours-per-day': 8,
+    'days-per-week': 5,
+    'vacation-per-year': 20,
+    'value-hour': 75
   },
-  {
-    name: 'IFood',
-    'daily-hours': 5.5,
-    'total-hours': 100,
-    created_at: Date.now()
-  },
-  {
-    name: 'Site Anime',
-    'daily-hours': 2,
-    'total-hours': 50.5,
-    created_at: Date.now()
-  },
-  {
-    name: 'Portifolio GitHub',
-    'daily-hours': 3.5,
-    'total-hours': 60,
-    created_at: Date.now()
+  controllers: {
+    index(req, res) {
+      return res.render(views + 'profile', { profile: Profile.data })
+    },
+    updated(req, res) {
+      const data = req.body
+      const weeksPerYear = 52
+      const weeksPerMonth = (weeksPerYear - data['vacation-per-year']) / 12
+      const weekTotalHours = data['hours-per-day'] * data['days-per-week']
+      const monthlyTotalHours = weekTotalHours * weeksPerMonth
+      const valueHour = data['monthly-budget'] / monthlyTotalHours
+
+      Profile.data = {
+        ...Profile.data,
+        ...req.body,
+        'value-hour': valueHour
+      }
+      return res.redirect('/profile')
+    }
   }
-]
+}
 
-routes.get('/', (req, res) => { 
-  const updatedJobs = jobs.map((job) => {
+const Job = {
+  data: [
+    {
+      id: 1,
+      name: 'Pizzaria Guloso',
+      'daily-hours': 2,
+      'total-hours': 10,
+      created_at: Date.now()
+    },
+    {
+      id: 2,
+      name: 'IFood',
+      'daily-hours': 7.5,
+      'total-hours': 10,
+      created_at: Date.now()
+    },
+    {
+      id: 3,
+      name: 'Site Anime',
+      'daily-hours': 2,
+      'total-hours': 40.5,
+      created_at: Date.now()
+    },
+    {
+      id: 4,
 
-    const remainingDays = (job['total-hours'] / job['daily-hours']).toFixed()
+      name: 'Portifolio GitHub',
+      'daily-hours': 3.5,
+      'total-hours': 60,
+      created_at: Date.now()
+    }
+  ],
+  controllers: {
+    index(req, res) {
+      const updatedJobs = Job.data.map((job) => {
+        const remaining = Job.services.remainingDays(job)
+        const status = remaining <= 0 ? 'done' : 'progress'
+        return {
+          ...job,
+          remaining,
+          status,
+          budget: Job.services.calculateBudget(job, Profile.data['value-hour'])
+        }
+      })
+      return res.render(views + 'index', { jobs: updatedJobs })
+    },
+    create(req, res) {
+      return res.render(views + 'job')
+    },
+    save(req, res) {
+      const lastId = Job.data[Job.data.length - 1]?.id || 0
+      Job.data.push({
+        id: lastId + 1,
+        name: req.body.name,
+        'daily-hours': req.body['daily-hours'],
+        'total-hours': req.body['total-hours'],
+        created_at: Date.now()
+      })
+      return res.redirect('/')
+    },
+    show(req, res) {
+      const jobId = req.params.id
 
-    const createdDate = new Date(job.created_at)
-    const dueDay = createdDate.getDate() + Number(remainingDays)
-    const dueDate = createdDate.setDate()
-    return job
-  })
-  
-  
-  
-  return res.render(views + 'index', { jobs })
+      const job = Job.data.find(job => Number(job.id) === Number(jobId))
 
-})
+      if (!job) {
+        return res.send('Job not found')
+      }
+      return res.render(views + 'job-edit', { job })
+    }
+  },
 
-routes.get('/job', (req, res) => res.render(views + 'job'))
+  services: {
+    remainingDays(job) {
+      const remainingDays = (job['total-hours'] / job['daily-hours']).toFixed()
+      const createdDate = new Date(job.created_at)
+      const dueDay = createdDate.getDate() + Number(remainingDays)
+      const dueDateInMs = createdDate.setDate(dueDay)
+      const timeDiffInMs = dueDateInMs - Date.now()
+      const dayInMs = 1000 * 60 * 60 * 24
+      const dayDiff = Math.floor(timeDiffInMs / dayInMs)
+      return dayDiff
+    },
+    calculateBudget: (job, valueHour) => valueHour * job['total-hours']
+  }
+}
 
-routes.post('/job', (req, res) => {
-  const lastId = jobs[jobs.length - 1]?.id || 1
-  jobs.push({
-    id: lastId + 1,
-    name: req.body.name,
-    'daily-hours': req.body['daily-hours'],
-    'total-hours': req.body['total-hours'],
-    created_at: Date.now()
-  })
-
-  return res.redirect('/')
-})
-
-routes.get('/job/edit', (req, res) => res.render(views + 'job-edit'))
-
-routes.get('/profile', (req, res) => res.render(views + 'profile', { profile }))
-routes.get('/index.html', (req, res) => res.redirect('/'))
-
+routes.get('/', Job.controllers.index)
+routes.get('/job', Job.controllers.create)
+routes.post('/job', Job.controllers.save)
+routes.get('/job/:id', Job.controllers.show)
+routes.get('/profile', Profile.controllers.index)
+routes.post('/profile', Profile.controllers.updated)
 module.exports = routes
